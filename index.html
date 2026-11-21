@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Retro FM Synth — SpaceChakra</title>
+  <style>
+    :root { --bg: #0d0717; --fg: #f1e6ff; --hot: #ff4fb0; --cool: #3cf0ff; }
+    html, body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.45 ui-monospace, Menlo, Consolas, monospace; }
+    main { max-width: 760px; margin: 0 auto; padding: 28px 18px; }
+    h1 { font-size: 22px; margin: 0 0 4px; color: var(--hot); letter-spacing: 1px; }
+    p { opacity: .8; margin: 4px 0 18px; }
+    button { font: inherit; background: #23123a; color: var(--fg); border: 1px solid #4a2a78; padding: 8px 12px; margin: 0 6px 6px 0; cursor: pointer; border-radius: 4px; }
+    button.on { background: var(--hot); color: #160a22; border-color: var(--hot); }
+    button.off { opacity: .4; text-decoration: line-through; }
+    #steps { display: grid; grid-template-columns: repeat(32, 1fr); gap: 2px; margin: 14px 0 20px; }
+    #steps i { height: 14px; background: #24143a; border-radius: 2px; }
+    #steps i.now { background: var(--cool); box-shadow: 0 0 8px var(--cool); }
+    #steps i:nth-child(4n+1) { background: #34204f; }
+    .row { margin: 10px 0; }
+    .label { display: inline-block; width: 70px; opacity: .6; }
+    kbd { background: #23123a; border: 1px solid #4a2a78; border-radius: 3px; padding: 0 5px; }
+    a { color: var(--cool); }
+  </style>
+</head>
+<body>
+<main>
+  <h1>RETRO FM SYNTH</h1>
+  <p>4-operator FM tracker runtime, Web Audio only, no samples. Song: <span id="name"></span></p>
+
+  <div class="row"><button id="play">▶ Play</button><button id="stop">■ Stop</button> <span id="pat"></span></div>
+  <div id="steps"></div>
+
+  <div class="row" id="mutes"><span class="label">tracks</span></div>
+  <div class="row" id="pads"><span class="label">drums</span></div>
+  <div class="row"><span class="label">lead</span> play with <kbd>A</kbd>–<kbd>K</kbd> (white keys), <kbd>W</kbd><kbd>E</kbd><kbd>T</kbd><kbd>Y</kbd><kbd>U</kbd> (black)</div>
+
+  <p style="margin-top:28px">Made by <a href="https://patreon.com/spacechakra" target="_blank" rel="noopener">SpaceChakra</a>. MIT licensed: use it in your games.</p>
+</main>
+
+<script src="retro-synth.js"></script>
+<script>
+  const rs = RetroSynth.create();
+  const $ = (id) => document.getElementById(id);
+  const stepsEl = $('steps');
+  for (let i = 0; i < 32; i++) stepsEl.appendChild(document.createElement('i'));
+
+  let loaded = rs.load('demo-song.json').then(() => { $('name').textContent = rs.song.name || 'untitled'; });
+
+  // Light the step the listener is actually hearing (events are scheduled ahead).
+  rs.onStep = (step, pattern, t) => {
+    const delay = Math.max(0, (t - rs.ctx.currentTime) * 1000);
+    setTimeout(() => {
+      [...stepsEl.children].forEach((el, i) => el.classList.toggle('now', i === step));
+      $('pat').textContent = 'pattern: ' + pattern;
+    }, delay);
+  };
+
+  $('play').onclick = async () => { await loaded; await rs.resume(); rs.play(); $('play').classList.add('on'); };
+  $('stop').onclick = () => { rs.stop(); $('play').classList.remove('on'); };
+
+  for (const tr of RetroSynth.TRACKS) {
+    const b = document.createElement('button');
+    b.textContent = tr;
+    b.onclick = () => { const m = !rs.ch[tr].muted; rs.mute(tr, m); b.classList.toggle('off', m); };
+    $('mutes').appendChild(b);
+  }
+  for (const lane of ['kick', 'snare', 'clap', 'clhat', 'ophat', 'cowbell', 'congaHi', 'congaLo', 'timp', 'riser']) {
+    const b = document.createElement('button');
+    b.textContent = lane;
+    b.onclick = async () => { await loaded; await rs.resume(); rs.hit(lane, 1); };
+    $('pads').appendChild(b);
+  }
+
+  // Computer keyboard → lead channel, one octave from C5 (MIDI 72).
+  const KEYS = { a: 72, w: 73, s: 74, e: 75, d: 76, f: 77, t: 78, g: 79, y: 80, h: 81, u: 82, j: 83, k: 84 };
+  const down = new Set();
+  addEventListener('keydown', async (e) => {
+    const n = KEYS[e.key.toLowerCase()];
+    if (n == null || down.has(n) || e.repeat) return;
+    await loaded; await rs.resume();
+    down.add(n); rs.noteOn('lead', n, 0.9);
+  });
+  addEventListener('keyup', (e) => {
+    const n = KEYS[e.key.toLowerCase()];
+    if (n == null) return;
+    down.delete(n); rs.noteOff('lead', n);
+  });
+</script>
+</body>
+</html>
